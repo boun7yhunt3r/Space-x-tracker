@@ -9,8 +9,8 @@ import sys
 class SpaceXTracker:
     """Track and analyze SpaceX launches w/ local caching."""
     #def __init__(self, db_path: str = "./data/spacex_launches.db"):
-    def __init__(self, db_path: str = "spacex_launches.db"):
-        """Initialize tracker with database path.
+    def __init__(self, db_path: str = r"data\spacex_launches.db"):
+        """Initialize app with db path/ update for docker.
         
         Args:
             db_path: Path to SQLite database (rework required for Docker)
@@ -21,12 +21,12 @@ class SpaceXTracker:
         self._init_database()
     
     def _init_database(self):
-        """Initialize SQLite database with schema."""
+        """Initialize SQLite DB with required tables."""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # launches table schema
+            # table launches schema
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS launches (
                     id TEXT PRIMARY KEY,
@@ -66,15 +66,23 @@ class SpaceXTracker:
         finally:
             if conn:
                 conn.close()
-        
+                
+    def is_cache_empty(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM launches")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count == 0
+    
     def _should_refresh_cache(self, cache_key: str, max_age_hours: int = 24) -> bool:
-        """Check if cache needs to be refreshed based on timestamp      
+        """Check if cache needs to be refreshed based on timestamp in cache_metadata     
         Args:
             cache_key: Cache identifier from metadata table
             max_age_hours: Maximum cache age in hours
             
         Returns:
-            True if cache should be refreshed
+            If cache should be refreshed returns True, else False
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -93,12 +101,6 @@ class SpaceXTracker:
         return datetime.now() - last_updated > timedelta(hours=max_age_hours)
     
     def _update_cache_metadata(self, cache_key: str, data: Optional[str] = None):
-        """Update cache metadata timestamp.
-        
-        Args:
-            cache_key: Cache identifier
-            data: Optional data to store
-        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -132,12 +134,12 @@ class SpaceXTracker:
         """Fetch all launches from SpaceX API and cache locally.
         
         Args:
-            force_refresh: Force API call even if cache is fresh
+            force_refresh: Force API call even if cache is recently updated
             
         Returns:
-            True if successful, False otherwise
+            if successful True, else False 
         """
-        if not force_refresh and not self._should_refresh_cache("launches"):
+        if not force_refresh and not self._should_refresh_cache("launches") and not self.is_cache_empty():
             print("Using cached data (fresh within 24 hours)")
             return True
         
@@ -203,10 +205,10 @@ class SpaceXTracker:
             return False
     
     def get_launch_statistics(self) -> Dict:
-        """Calculate launch statistics from cached data.
+        """Calculate launch statistics from DB cached data.
         
         Returns:
-            Dictionary with statistics
+            Dictionary with statistics on launch data
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -234,7 +236,7 @@ class SpaceXTracker:
         """)
         by_year = cursor.fetchall()
         
-        # Launches by month (last 12 months)
+        # Launches by month
         cursor.execute("""
             SELECT strftime('%Y-%m', date_utc) as month, COUNT(*) as count
             FROM launches
@@ -253,7 +255,7 @@ class SpaceXTracker:
         """)
         by_rocket = cursor.fetchall()
         
-        # Rocket launches breakdown (all statuses)
+        # Rocket launches breakdown (include every statuses)
         cursor.execute("""
             SELECT 
                 rocket_name,
@@ -298,89 +300,6 @@ class SpaceXTracker:
             'by_rocket_success': by_rocket_success,
             'by_launch_site': by_launch_site
         }
-    
-    def get_recent_launches(self, limit: int = 10) -> List[Dict]:
-        """Get most recent launches.
-        
-        Args:
-            limit: Number of launches to return
-            
-        Returns:
-            List of launch dictionaries
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT id, name, date_utc, success, rocket_name, launchpad_name, details
-            FROM launches
-            ORDER BY date_unix DESC
-            LIMIT ?
-        """, (limit,))
-        
-        columns = ['id', 'name', 'date_utc', 'success', 'rocket_name', 'launchpad_name', 'details']
-        launches = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        conn.close()
-        
-        return launches
-    
-    def get_launch_details(self, launch_id: str) -> Optional[Dict]:
-        """Get detailed information about a specific launch.
-        
-        Args:
-            launch_id: Launch identifier
-            
-        Returns:
-            Launch details dictionary or None
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM launches WHERE id = ?", (launch_id,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if not row:
-            return None
-        
-        columns = ['id', 'name', 'date_utc', 'date_unix', 'success', 'details',
-                   'rocket_id', 'rocket_name', 'launchpad_id', 'launchpad_name',
-                   'crew', 'payloads', 'failures', 'links', 'fetched_at']
-        
-        launch = dict(zip(columns, row))
-        
-        # Parse JSON fields
-        for field in ['crew', 'payloads', 'failures', 'links']:
-            if launch[field]:
-                launch[field] = json.loads(launch[field])
-        
-        return launch
-    
-    def search_launches(self, query: str) -> List[Dict]:
-        """Search launches by name or details.
-        
-        Args:
-            query: Search query
-            
-        Returns:
-            List of matching launches
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT id, name, date_utc, success, rocket_name, details
-            FROM launches
-            WHERE name LIKE ? OR details LIKE ?
-            ORDER BY date_unix DESC
-        """, (f'%{query}%', f'%{query}%'))
-        
-        columns = ['id', 'name', 'date_utc', 'success', 'rocket_name', 'details']
-        launches = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        conn.close()
-        
-        return launches
-
 
 def display_statistics(stats: Dict):
     """Display formatted statistics."""
@@ -402,26 +321,6 @@ def display_statistics(stats: Dict):
     print("="*60 + "\n")
 
 
-def display_recent_launches(launches: List[Dict]):
-    """Display recent launches."""
-    print("\n" + "="*60)
-    print("RECENT LAUNCHES")
-    print("="*60 + "\n")
-    
-    for launch in launches:
-        status = "✓ Success" if launch['success'] == 1 else "✗ Failed" if launch['success'] == 0 else "? Pending"
-        date = datetime.fromisoformat(launch['date_utc'].replace('Z', '+00:00'))
-        
-        print(f"{launch['name']}")
-        print(f"  Status: {status}")
-        print(f"  Date: {date.strftime('%Y-%m-%d %H:%M UTC')}")
-        print(f"  Rocket: {launch['rocket_name'] or 'Unknown'}")
-        print(f"  Launchpad: {launch['launchpad_name'] or 'Unknown'}")
-        if launch['details']:
-            print(f"  Details: {launch['details'][:100]}...")
-        print()
-
-
 def main():
     """Main application entry point."""
     tracker = SpaceXTracker()
@@ -435,38 +334,19 @@ def main():
     while True:
         print("\nOptions:")
         print("1. View Statistics")
-        print("2. View Recent Launches")
-        print("3. Search Launches")
-        print("4. Refresh Data")
-        print("5. Exit")
+        print("2. Refresh Data")
+        print("3. Exit")
         
-        choice = input("\nEnter choice (1-5): ").strip()
+        choice = input("\nEnter choice (1-3): ").strip()
         
         if choice == "1":
             stats = tracker.get_launch_statistics()
             display_statistics(stats)
         
         elif choice == "2":
-            try:
-                limit = int(input("How many launches to show? (default 10): ") or "10")
-                launches = tracker.get_recent_launches(limit)
-                display_recent_launches(launches)
-            except ValueError:
-                print("Invalid number")
-        
-        elif choice == "3":
-            query = input("Enter search query: ").strip()
-            if query:
-                results = tracker.search_launches(query)
-                if results:
-                    display_recent_launches(results)
-                else:
-                    print("No launches found")
-        
-        elif choice == "4":
             tracker.fetch_launches(force_refresh=True)
         
-        elif choice == "5":
+        elif choice == "3":
             print("Goodbye!")
             break
         
