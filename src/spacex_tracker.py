@@ -26,6 +26,7 @@ class SpaceXTracker:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # launches table schema
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS launches (
                     id TEXT PRIMARY KEY,
@@ -46,6 +47,7 @@ class SpaceXTracker:
                 )
             """)
             
+            # last update timestamp tracking
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS cache_metadata (
                     key TEXT PRIMARY KEY,
@@ -66,8 +68,7 @@ class SpaceXTracker:
                 conn.close()
         
     def _should_refresh_cache(self, cache_key: str, max_age_hours: int = 24) -> bool:
-        """Check if cache needs refreshing.
-        
+        """Check if cache needs to be refreshed based on timestamp      
         Args:
             cache_key: Cache identifier from metadata table
             max_age_hours: Maximum cache age in hours
@@ -109,6 +110,24 @@ class SpaceXTracker:
         conn.commit()
         conn.close()
     
+    def get_cache_last_updated(self, cache_key: str = "launches") -> Optional[str]:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT last_updated FROM cache_metadata WHERE key = ?",
+            (cache_key,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        # Format nicely for UI
+        dt = datetime.fromisoformat(row[0])
+        return dt.strftime("%Y-%m-%d %H:%M UTC")
+
     def fetch_launches(self, force_refresh: bool = False) -> bool:
         """Fetch all launches from SpaceX API and cache locally.
         
@@ -129,7 +148,7 @@ class SpaceXTracker:
             launches = response.json()
             
             # print("\n--- SAMPLE API RESPONSE (first 5 launches) ---")
-            # for i, launch in enumerate(launches[:5], start=1):
+            # for i, launch in enumerate(launches[:2], start=1):
             #     print(f"\nLaunch #{i}")
             #     print(json.dumps(launch, indent=2))
             # print("\n--- END SAMPLE ---\n")
@@ -212,9 +231,17 @@ class SpaceXTracker:
             FROM launches
             GROUP BY year
             ORDER BY year DESC
-            LIMIT 10
         """)
         by_year = cursor.fetchall()
+        
+        # Launches by month (last 12 months)
+        cursor.execute("""
+            SELECT strftime('%Y-%m', date_utc) as month, COUNT(*) as count
+            FROM launches
+            GROUP BY month
+            ORDER BY month DESC
+        """)
+        by_month = cursor.fetchall()
         
         # Most used rockets
         cursor.execute("""
@@ -226,6 +253,37 @@ class SpaceXTracker:
         """)
         by_rocket = cursor.fetchall()
         
+        # Rocket launches breakdown (all statuses)
+        cursor.execute("""
+            SELECT 
+                rocket_name,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as successful,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN success IS NULL THEN 1 ELSE 0 END) as pending
+            FROM launches
+            WHERE rocket_name IS NOT NULL
+            GROUP BY rocket_name
+        """)
+        rocket_success_data = cursor.fetchall()
+        by_rocket_success = {
+            rocket: {
+                'successful': successful,
+                'failed': failed,
+                'pending': pending
+            }
+            for rocket, successful, failed, pending in rocket_success_data
+        }
+        
+        # Launches by launch site
+        cursor.execute("""
+            SELECT launchpad_name, COUNT(*) as count
+            FROM launches
+            WHERE launchpad_name IS NOT NULL
+            GROUP BY launchpad_name
+            ORDER BY count DESC
+        """)
+        by_launch_site = dict(cursor.fetchall())
+        
         conn.close()
         
         return {
@@ -235,7 +293,10 @@ class SpaceXTracker:
             'pending': pending or 0,
             'success_rate': round((successful or 0) / total * 100, 2) if total > 0 else 0,
             'by_year': by_year,
-            'by_rocket': by_rocket
+            'by_month': by_month,
+            'by_rocket': by_rocket,
+            'by_rocket_success': by_rocket_success,
+            'by_launch_site': by_launch_site
         }
     
     def get_recent_launches(self, limit: int = 10) -> List[Dict]:
