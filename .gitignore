@@ -1,3 +1,15 @@
+# Python cache
 __pycache__/
-*.py[cod]
-*$py.class
+*.pyc
+
+# Pytest cache
+.pytest_cache/
+
+# VS Code settings
+.vscode/
+
+# Database
+*.db
+
+# Python compiled files
+*.cpython-*.pyc

@@ -311,8 +311,8 @@ def create_app():
                     if end is not None:
                         end = int(end)
 
-                    print("DEBUG start unix:", start, type(start))
-                    print("DEBUG end unix:", end, type(end))
+                    # print("DEBUG start unix:", start, type(start))
+                    # print("DEBUG end unix:", end, type(end))
 
                     df = app.filter_launches(start, end, rocket, status, site)
                     count_msg = f"**Showing {len(df)} launches**"
@@ -406,8 +406,6 @@ def create_app():
         **Cache Duration:** 24 hours
         """)
 
-
-        
         # Refresh button functionality common for both tabs
         def refresh_all():
             status = app.refresh_data()
@@ -429,9 +427,6 @@ def create_app():
             ]
         )
                 
-
-
-        
     return demo
 
 

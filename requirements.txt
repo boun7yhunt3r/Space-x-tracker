@@ -1,1 +1,6 @@
-requests==2.31.0
+requests
+pandas
+gradio
+pytest
+python-dateutil
+sqlite3
