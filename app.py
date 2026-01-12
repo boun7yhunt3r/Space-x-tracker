@@ -155,7 +155,7 @@ class SpaceXGradioApp:
     def get_statistics_charts_data(self):
         stats = self.tracker.get_launch_statistics()
 
-        # ---- Rocket launches stats (success, failed, pending) ----
+        # Rocket launches stats (success, failed, pending)
         rocket_rows = []
         for rocket, data in stats.get("by_rocket_success", {}).items():
             rocket_rows.append({
@@ -340,8 +340,6 @@ def create_app():
                 # refresh_status = gr.Markdown()
                 
                 stats_summary = gr.Markdown(value=app.get_statistics_summary())
-                
-                gr.Markdown("### Visual Analytics")
                 
                 with gr.Row():
                     with gr.Column():

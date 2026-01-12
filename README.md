@@ -48,6 +48,10 @@ Enter choice (1-3):
   - `launches` - Launch data with details
   - `cache_metadata` - Cache timestamps
 
+### Data Export
+- **Select format**: Select Json/Excel format for export -> Click export data -> Download using file size link
+
+
 ### Caching Strategy
 
 - Default cache lifetime: 24 hours
