@@ -30,7 +30,7 @@ class FakeAPI:
 
 
 def fake_api_call(url, timeout=10):
-    """Returns fake data instead of calling real API"""
+    """Returns fsynthetic data instead of calling real API"""
     data = load_test_data()
     if "launches" in url:
         return FakeAPI(data["launches"])
